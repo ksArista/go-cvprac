@@ -279,7 +279,7 @@ func (c *CvpClient) Connect(username string, password string) error {
 	return c.createSession(true)
 }
 
-// Connect to CVP with a token. Takes the cvpToken parameter as an input for the string. 
+// Connect to CVP with a token. Takes the cvpToken parameter as an input for the string.
 func (c *CvpClient) ConnectWithToken(cvpToken string) error {
 	c.Token = cvpToken
 	return c.createSession(true)
@@ -419,6 +419,10 @@ func (c *CvpClient) makeRequest(reqType string, url string, params *url.Values,
 		return nil, errors.Errorf("makeRequest: No valid session to CVP [%s]", c.url)
 	}
 
+	// Resource queries on CVP >v3 (non-CVaaS) need to route through "<host>/api/...",
+	// but existing library endpoints do not. This is simpler in the short term than adding
+	// /web to the front of all older endpoints.
+	stripWeb := strings.HasPrefix(url, "/api") && !c.IsCvaas
 	retryCnt := NumRetryRequests
 
 	if params != nil {
@@ -453,6 +457,12 @@ func (c *CvpClient) makeRequest(reqType string, url string, params *url.Values,
 		// Clear our errors
 		err = nil
 
+		fmt.Printf("Req to URL: %v %v\n", c.url, url)
+
+		// Temporarily strip and readd web/ prefix as needed
+		if stripWeb {
+			c.Client.SetHostURL(strings.TrimSuffix(c.url, "/web"))
+		}
 		// Check reqType
 		switch reqType {
 		case "GET":
@@ -463,6 +473,9 @@ func (c *CvpClient) makeRequest(reqType string, url string, params *url.Values,
 			resp, err = request.SetBody(data).Delete(url)
 		default:
 			return nil, errors.Errorf("Invalid. Request type [%s] not implemented", reqType)
+		}
+		if stripWeb {
+			c.Client.SetHostURL(c.url)
 		}
 
 		if err != nil {
